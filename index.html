@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f172a">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Savings Tracker Pro</title>
+    <link rel="stylesheet" href="style.css">
+<script src="lucide.min.js"></script>
+<script src="chart.min.js"></script>
+</head>
+<script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js");
+  }
+</script>
+<body>
+    <div id="app">
+        <!-- TOS Overlay -->
+        <div id="tos-overlay" class="overlay">
+            <div class="modal">
+                <h2>Savings Tracker</h2>
+                <div class="modal-content">
+                    <p>Track your goals with precision. Data stays on your device.</p>
+                </div>
+                <button id="agree-tos-btn" class="btn-primary">Get Started</button>
+            </div>
+        </div>
+
+        <!-- Main Viewport -->
+        <main id="main-content" class="hidden">
+            <header>
+                <h1 id="view-title">My Plans</h1>
+                <button id="add-plan-btn" class="btn-icon">
+                    <i data-lucide="plus-circle" size="20"></i>
+                </button>
+            </header>
+
+            <div id="screen-container">
+                <!-- Home Screen -->
+                <section id="home-screen" class="screen active scrollable-area">
+                    <div id="plans-list" class="list-container"></div>
+                </section>
+
+                <!-- Global Reports Screen -->
+                <section id="reports-screen" class="screen scrollable-area">
+                    <div class="stats-card">
+                        <small>Total Savings</small>
+                        <h2 id="total-savings-amount">₱0.00</h2>
+                    </div>
+                    <div class="card chart-container">
+                        <canvas id="savings-chart"></canvas>
+                    </div>
+                    <div id="global-reports-list" class="list-container"></div>
+                </section>
+
+                <!-- Plan Detail Screen (The Hub) -->
+                <section id="plan-detail-screen" class="screen">
+                    <div class="detail-header">
+                        <button id="back-to-home" class="btn-text"><i data-lucide="chevron-left"></i></button>
+                        <h2 id="detail-plan-name">Plan Name</h2>
+                        <div class="placeholder"></div>
+                    </div>
+                    
+                    <!-- Tabs -->
+                    <div class="tabs">
+                        <button class="tab-btn active" data-tab="this-tab">This</button>
+                        <button class="tab-btn" data-tab="reports-tab">Reports</button>
+                        <button class="tab-btn" data-tab="settings-tab">Settings</button>
+                    </div>
+
+                    <div id="plan-content" class="tab-content scrollable-area">
+                        <!-- THIS TAB -->
+                        <div id="this-tab" class="tab-pane active">
+                            <div id="not-started-msg" class="info-banner hidden">
+                                <i data-lucide="calendar"></i>
+                                <span id="start-date-status">Plan starts on ...</span>
+                            </div>
+
+                            <div id="daily-action-card" class="card">
+                                <div id="allowance-setup-ui">
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label>Today's Allowance</label>
+                                            <input type="number" id="input-allowance" placeholder="0.00">
+                                        </div>
+                                        <div class="form-group" id="manual-savings-group">
+                                            <label>Manual Savings</label>
+                                            <input type="number" id="input-manual-savings" placeholder="0.00">
+                                        </div>
+                                    </div>
+                                    <button id="start-day-btn" class="btn-primary">Set Today</button>
+                                </div>
+
+                                <div id="day-active-ui" class="hidden">
+                                    <div class="allowance-metrics">
+                                        <div class="metric">
+                                            <small>Remaining</small>
+                                            <p id="ui-remaining">₱0.00</p>
+                                        </div>
+                                        <div class="metric">
+                                            <small>Savings Goal</small>
+                                            <p id="ui-savings">₱0.00</p>
+                                        </div>
+                                        <div class="metric">
+                                            <small>Spent</small>
+                                            <p id="ui-spent">₱0.00</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="other-purchase-row">
+                                        <input type="number" id="other-purchase-amount" placeholder="Other Expense (₱)">
+                                        <button id="buy-other-btn" class="btn-secondary">Buy</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="products-section">
+                                <div class="section-header">
+                                    <h3>Products</h3>
+                                    <button id="open-add-product-btn" class="btn-icon"><i data-lucide="plus" size="16"></i></button>
+                                </div>
+                                <div id="products-grid" class="products-grid"></div>
+                            </div>
+                        </div>
+
+                        <!-- REPORTS TAB -->
+                        <div id="reports-tab" class="tab-pane">
+                            <div class="card">
+                                <h3>Status</h3>
+                                <p id="plan-recommendation" class="text-primary"></p>
+                                <div class="progress-container">
+                                    <div id="plan-progress-bar" class="progress-bar"></div>
+                                </div>
+                                <div class="stats-grid-mini">
+                                    <div class="stat-mini">
+                                        <small>Total Saved</small>
+                                        <p id="stat-total-saved">₱0.00</p>
+                                    </div>
+                                    <div class="stat-mini">
+                                        <small>Total Debt</small>
+                                        <p id="stat-debt">₱0.00</p>
+                                    </div>
+                                    <div class="stat-mini">
+                                        <small>Days Left (M-F)</small>
+                                        <p id="stat-days-left">0</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card chart-container-mini">
+                                <canvas id="plan-mini-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- SETTINGS TAB -->
+                        <div id="settings-tab" class="tab-pane">
+                            <div class="card settings-list">
+                                <div class="setting-item">
+                                    <label>Estimate Daily (based on Goal)</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="toggle-estimate">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-item">
+                                    <label>Manual Savings Daily</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="toggle-manual">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <div class="setting-item">
+                                    <label>Penalty Mode</label>
+                                    <label class="switch">
+                                        <input type="checkbox" id="toggle-penalty">
+                                        <span class="slider round"></span>
+                                    </label>
+                                </div>
+                                <hr>
+                                <div class="form-group">
+                                    <label>Edit Plan Name</label>
+                                    <input type="text" id="edit-plan-name">
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group">
+                                        <label>Start Date</label>
+                                        <input type="date" id="edit-start-date">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>End Date</label>
+                                        <input type="date" id="edit-end-date">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Peso Goal (₱)</label>
+                                    <input type="number" id="edit-goal">
+                                </div>
+                                <button id="update-plan-btn" class="btn-primary">Update Plan</button>
+                                <button id="delete-plan-btn" class="btn-danger" style="margin-top: 10px;">Delete Plan</button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <nav id="bottom-nav">
+                <button class="nav-item active" data-screen="home-screen">
+                    <i data-lucide="home"></i>
+                    <span>Plans</span>
+                </button>
+                <button class="nav-item" data-screen="reports-screen">
+                    <i data-lucide="bar-chart"></i>
+                    <span>Reports</span>
+                </button>
+            </nav>
+        </main>
+
+        <!-- Modals -->
+        <div id="plan-modal" class="overlay hidden">
+            <div class="modal">
+                <h3>New Savings Plan</h3>
+                <div class="form-group">
+                    <label>Plan Name</label>
+                    <input type="text" id="new-plan-name" placeholder="e.g. Dream Car">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Start Date</label>
+                        <input type="date" id="new-plan-start">
+                    </div>
+                    <div class="form-group">
+                        <label>End Date</label>
+                        <input type="date" id="new-plan-end">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Peso Goal (Optional)</label>
+                    <input type="number" id="new-plan-goal" placeholder="0.00">
+                </div>
+                <div class="modal-actions">
+                    <button id="close-plan-modal" class="btn-text">Cancel</button>
+                    <button id="save-new-plan" class="btn-primary">Create</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="product-modal" class="overlay hidden">
+            <div class="modal">
+                <h3>Add Product</h3>
+                <input type="text" id="prod-name" placeholder="Product Name">
+                <input type="number" id="prod-price" placeholder="Price (₱)">
+                <div class="modal-actions">
+                    <button id="close-prod-modal" class="btn-text">Cancel</button>
+                    <button id="save-prod-btn" class="btn-primary">Add</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="confirm-modal" class="overlay hidden">
+            <div class="modal">
+                <h3 id="confirm-title">Are you sure?</h3>
+                <p id="confirm-msg"></p>
+                <div class="modal-actions">
+                    <button id="confirm-cancel" class="btn-text">No</button>
+                    <button id="confirm-ok" class="btn-danger">Yes, Delete</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
