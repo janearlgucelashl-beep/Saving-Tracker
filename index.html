@@ -1,9 +1,11 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f172a">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>BaonBuddy</title>
+    <title>Savings Tracker Pro</title>
     <link rel="stylesheet" href="style.css">
 <script src="lucide.min.js"></script>
 <script src="chart.min.js"></script>
@@ -17,25 +19,19 @@
     <div id="app">
         <!-- TOS Overlay -->
         <div id="tos-overlay" class="overlay">
-            <div class="modal branding-modal">
-                <div class="logo-circle">
-                    <i data-lucide="piggy-bank" size="40"></i>
-                </div>
-                <h2>BaonBuddy</h2>
+            <div class="modal">
+                <h2>Savings Tracker</h2>
                 <div class="modal-content">
-                    <p>Smart savings for your daily allowance. Track every peso, reach your dreams.</p>
+                    <p>Track your goals with precision. Data stays on your device.</p>
                 </div>
-                <button id="agree-tos-btn" class="btn-primary">Let's Go!</button>
+                <button id="agree-tos-btn" class="btn-primary">Get Started</button>
             </div>
         </div>
 
         <!-- Main Viewport -->
         <main id="main-content" class="hidden">
             <header>
-                <div class="header-logo">
-                    <i data-lucide="wallet" class="cyan-icon"></i>
-                    <h1 id="view-title">BaonBuddy</h1>
-                </div>
+                <h1 id="view-title">My Plans</h1>
                 <button id="add-plan-btn" class="btn-icon">
                     <i data-lucide="plus-circle" size="20"></i>
                 </button>
@@ -43,16 +39,13 @@
 
             <div id="screen-container">
                 <!-- Home Screen -->
-                <section id="home-screen" class="screen active">
-                    <div class="scrollable-area">
-                        <div id="plans-list" class="list-container"></div>
-                    </div>
+                <section id="home-screen" class="screen active scrollable-area">
+                    <div id="plans-list" class="list-container"></div>
                 </section>
 
                 <!-- Global Reports Screen -->
-                <section id="reports-screen" class="screen">
-                    <div class="scrollable-area">
-                        <div class="stats-card">
+                <section id="reports-screen" class="screen scrollable-area">
+                    <div class="stats-card">
                         <small>Total Savings</small>
                         <h2 id="total-savings-amount">₱0.00</h2>
                     </div>
@@ -60,7 +53,6 @@
                         <canvas id="savings-chart"></canvas>
                     </div>
                     <div id="global-reports-list" class="list-container"></div>
-                    </div>
                 </section>
 
                 <!-- Plan Detail Screen (The Hub) -->
@@ -117,11 +109,6 @@
                                         </div>
                                     </div>
                                     
-                                    <div class="edit-day-row" style="gap: 12px;">
-                                        <button id="edit-allowance-btn" class="btn-text-small"><i data-lucide="edit-3" size="14"></i> Update Today's Allowance</button>
-                                        <button id="edit-manual-savings-btn" class="btn-text-small hidden"><i data-lucide="edit-3" size="14"></i> Update Manual Savings</button>
-                                    </div>
-
                                     <div class="other-purchase-row">
                                         <input type="number" id="other-purchase-amount" placeholder="Other Expense (₱)">
                                         <button id="buy-other-btn" class="btn-secondary">Buy</button>
@@ -155,23 +142,14 @@
                                         <small>Total Debt</small>
                                         <p id="stat-debt">₱0.00</p>
                                     </div>
-                                    <div class="stat-mini" id="stat-days-left-group">
+                                    <div class="stat-mini">
                                         <small>Days Left (M-F)</small>
                                         <p id="stat-days-left">0</p>
                                     </div>
-                                    <div class="stat-mini hidden" id="stat-projected-group">
-                                        <small>Est. Completion</small>
-                                        <p id="stat-projected-date" style="font-size: 11px; color: var(--primary-dark);">--</p>
-                                    </div>
                                 </div>
                             </div>
-                            <div class="card chart-container-mini" style="display: flex; gap: 10px; align-items: center;">
-                                <div style="flex: 1; height: 100%;">
-                                    <canvas id="plan-mini-chart"></canvas>
-                                </div>
-                                <div style="flex: 2; height: 100%;">
-                                    <canvas id="plan-history-chart"></canvas>
-                                </div>
+                            <div class="card chart-container-mini">
+                                <canvas id="plan-mini-chart"></canvas>
                             </div>
                         </div>
 
@@ -204,21 +182,12 @@
                                     <label>Edit Plan Name</label>
                                     <input type="text" id="edit-plan-name">
                                 </div>
-                                <div class="form-group">
-                                    <div class="setting-item" style="padding: 0; margin-bottom: 8px;">
-                                        <label style="margin: 0;">Use End Date / Deadline</label>
-                                        <label class="switch">
-                                            <input type="checkbox" id="toggle-use-end-date">
-                                            <span class="slider round"></span>
-                                        </label>
-                                    </div>
-                                </div>
                                 <div class="form-row">
                                     <div class="form-group">
                                         <label>Start Date</label>
                                         <input type="date" id="edit-start-date">
                                     </div>
-                                    <div class="form-group" id="edit-end-date-group">
+                                    <div class="form-group">
                                         <label>End Date</label>
                                         <input type="date" id="edit-end-date">
                                     </div>
@@ -227,17 +196,7 @@
                                     <label>Peso Goal (₱)</label>
                                     <input type="number" id="edit-goal">
                                 </div>
-
-                                <hr>
-                                <div class="section-header">
-                                    <label style="font-size: 11px; font-weight: 800; color: var(--text-light); text-transform: uppercase;">Exclusion Periods</label>
-                                    <button id="add-exclusion-btn" class="btn-icon"><i data-lucide="calendar-plus" size="16"></i></button>
-                                </div>
-                                <div id="exclusions-list" class="exclusions-list">
-                                    <!-- Exclusion items here -->
-                                </div>
-
-                                <button id="update-plan-btn" class="btn-primary" style="margin-top: 15px;">Update Plan</button>
+                                <button id="update-plan-btn" class="btn-primary">Update Plan</button>
                                 <button id="delete-plan-btn" class="btn-danger" style="margin-top: 10px;">Delete Plan</button>
                             </div>
                         </div>
@@ -265,21 +224,12 @@
                     <label>Plan Name</label>
                     <input type="text" id="new-plan-name" placeholder="e.g. Dream Car">
                 </div>
-                <div class="form-group">
-                    <div class="setting-item" style="padding: 0; margin-bottom: 8px;">
-                        <label style="margin: 0;">Set a specific End Date?</label>
-                        <label class="switch">
-                            <input type="checkbox" id="new-plan-use-end" checked>
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-                </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label>Start Date</label>
                         <input type="date" id="new-plan-start">
                     </div>
-                    <div class="form-group" id="new-plan-end-group">
+                    <div class="form-group">
                         <label>End Date</label>
                         <input type="date" id="new-plan-end">
                     </div>
@@ -303,26 +253,6 @@
                 <div class="modal-actions">
                     <button id="close-prod-modal" class="btn-text">Cancel</button>
                     <button id="save-prod-btn" class="btn-primary">Add</button>
-                </div>
-            </div>
-        </div>
-
-        <div id="exclusion-modal" class="overlay hidden">
-            <div class="modal">
-                <h3>New Exclusion</h3>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>From</label>
-                        <input type="date" id="excl-start">
-                    </div>
-                    <div class="form-group">
-                        <label>To</label>
-                        <input type="date" id="excl-end">
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button id="close-excl-modal" class="btn-text">Cancel</button>
-                    <button id="save-excl-btn" class="btn-primary">Add</button>
                 </div>
             </div>
         </div>

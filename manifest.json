@@ -1,6 +1,6 @@
 {
-  "name": "BaonBuddy",
-  "short_name": "BaonBuddy",
+  "name": "Savings Tracker",
+  "short_name": "Savings",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
