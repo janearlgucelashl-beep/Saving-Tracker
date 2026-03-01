@@ -1,14 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+        <link rel="manifest" href="manifest.json">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>BaonBuddy</title>
-    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="style.css">
  <script src="lucide.min.js"></script>
 <script src="chart.min.js"></script>
 </head>
+    <script>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("service-worker.js");
+  }
+    </script>
 <body>
     <div id="app">
         <!-- TOS Overlay -->
@@ -335,10 +340,5 @@
         </div>
     </div>
     <script type="module" src="app.js"></script>
-<script>
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("service-worker.js");
-  }
-</script>
 </body>
 </html>
