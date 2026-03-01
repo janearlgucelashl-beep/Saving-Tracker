@@ -1,4 +1,4 @@
-const CACHE_NAME = "savings-tracker-v1";
+const CACHE_NAME = "savings-tracker-v2";
 
 const FILES_TO_CACHE = [
   "./",
@@ -7,7 +7,11 @@ const FILES_TO_CACHE = [
   "./app.js",
   "./store.js",
   "./lucide.min.js",
-  "./chart.min.js"
+  "./chart.min.js",
+  "./Outfit-Regular.ttf",
+  "./Outfit-Bold.ttf",
+  "./Outfit-ExtraBold.ttf",
+  "./Outfit-SemiBold.ttf"
 ];
 
 // Install: cache files
