@@ -7,7 +7,11 @@ const FILES_TO_CACHE = [
   "./app.js",
   "./store.js",
   "./lucide.min.js",
-  "./chart.min.js"
+  "./chart.min.js",
+  "./Outfit-ExtraBold.woff2",
+  "./Outfit-Bold.woff2",
+  "./Outfit-Regular.woff2",
+  "./Outfit-SemiBold.woff2"
 ];
 
 // Install: cache files

@@ -5,6 +5,7 @@ let state = Store.load();
 let currentPlanId = null;
 let globalChart = null;
 let planChart = null;
+let planHistoryChart = null;
 
 // Initialize missing state props
 state.history = state.history || [];
@@ -12,29 +13,81 @@ state.plans = state.plans || [];
 state.totalSavings = state.totalSavings || 0;
 
 // --- Helper Functions ---
+function refreshPlanTarget(plan) {
+    if (!plan.dayActive) return;
+    // If not in manual mode, always recalculate target based on current logic/rules
+    if (!plan.manualSavingsMode) {
+        plan.dailySavingsGoal = calculateRequiredDaily(plan, plan.dailyAllowance);
+    }
+}
+
 function getTodayStr() {
     // Strictly uses Philippines Time (Asia/Manila)
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 }
 
 function getManilaDate() {
-    // Robust way to get the current date in Philippines Time (UTC+8)
-    const now = new Date();
-    const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
-    return new Date(utc + (3600000 * 8));
+    // Get current date string in Manila and create a local Date at midnight
+    const str = getTodayStr();
+    return new Date(str + 'T00:00:00');
 }
 
-function countCalculationDays(start, end) {
-    // Counts only Monday to Friday (Mon-Fri) specifically in Manila Time
+function mergeExclusions(exclusions) {
+    if (!exclusions || exclusions.length === 0) return [];
+    
+    // Sort by start date
+    const sorted = [...exclusions].sort((a, b) => a.start.localeCompare(b.start));
+    const merged = [];
+    
+    let current = sorted[0];
+    
+    for (let i = 1; i < sorted.length; i++) {
+        const next = sorted[i];
+        // If overlap or contiguous (next start <= current end)
+        if (next.start <= current.end) {
+            // Merge: take the max end date
+            if (next.end > current.end) {
+                current.end = next.end;
+            }
+        } else {
+            merged.push(current);
+            current = next;
+        }
+    }
+    merged.push(current);
+    return merged;
+}
+
+function isDateInExclusions(date, exclusions) {
+    const dStr = date.toLocaleDateString('en-CA');
+    return exclusions.some(ex => dStr >= ex.start && dStr <= ex.end);
+}
+
+function countCalculationDays(start, end, exclusions = []) {
+    // Counts only Monday to Friday (Mon-Fri)
+    // AND skips exclusion periods
     let count = 0;
+    // Ensure we work with clear midnight dates
     let cur = new Date(start);
-    const last = new Date(end);
+    if (typeof start === 'string') cur = new Date(start + 'T00:00:00');
+    
+    let last = new Date(end);
+    if (typeof end === 'string') last = new Date(end + 'T00:00:00');
+    
     cur.setHours(0, 0, 0, 0);
     last.setHours(0, 0, 0, 0);
 
+    const mergedEx = mergeExclusions(exclusions);
+
     while (cur <= last) {
-        const dayName = cur.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'short' });
-        if (!['Sat', 'Sun'].includes(dayName)) {
+        const dayNum = cur.getDay(); // 0 is Sun, 6 is Sat
+        const isWeekend = (dayNum === 0 || dayNum === 6);
+        
+        // Format cur to YYYY-MM-DD for exclusion check
+        const dStr = cur.toLocaleDateString('en-CA');
+        const isExcluded = mergedEx.some(ex => dStr >= ex.start && dStr <= ex.end);
+        
+        if (!isWeekend && !isExcluded) {
             count++;
         }
         cur.setDate(cur.getDate() + 1);
@@ -43,28 +96,85 @@ function countCalculationDays(start, end) {
 }
 
 function calculateRequiredDaily(plan, allowance) {
-    if (!plan.goal) return 0;
-    
     const today = getManilaDate();
     today.setHours(0, 0, 0, 0);
+
+    // Rule: If today falls inside an exclusion range, requiredSavings is 0
+    if (isDateInExclusions(today, plan.exclusions || [])) {
+        return 0;
+    }
+
+    // Indefinite Mode Rule: No End Date
+    if (plan.useEndDate === false) {
+        if (!plan.manualSavingsMode) {
+            // Target is 50% of today's allowance
+            return allowance * 0.5;
+        }
+        return plan.dailySavingsGoal || 0;
+    }
+
+    if (!plan.goal) return 0;
+
     const end = new Date(plan.endDate);
     end.setHours(0, 0, 0, 0);
     
     if (today > end) return 0;
     
-    // Remaining days counting Monday to Friday only
-    const daysLeft = countCalculationDays(today, end);
+    // Remaining days counting Monday to Friday only (excluding exclusion periods)
+    const daysLeft = countCalculationDays(today, end, plan.exclusions || []);
     if (daysLeft <= 0) return allowance; // Should save everything if it's the last day
     
     // The Formula: (Goal - Total Savings) / Days Left
-    // We include penalty debt if the user missed previous goals and has Penalty Mode on
     const currentSavings = plan.totalSaved || 0;
     const remainingNeeded = plan.goal - currentSavings;
     
     let target = Math.max(0, remainingNeeded / daysLeft);
+
+    // Special User Rule: if end date is on, manual savings is off, allowance >= 80, and target < 50
+    // add 20% of allowance to the target.
+    if (plan.useEndDate !== false && !plan.manualSavingsMode && allowance >= 80 && target < 50) {
+        target += (allowance * 0.20);
+    }
     
     // The target is capped by what you actually have today (today's allowance)
     return Math.min(allowance, target);
+}
+
+function calculateProjectedEndDate(plan) {
+    if (!plan.goal || !plan.dailySavingsGoal || plan.dailySavingsGoal <= 0) return null;
+    
+    const remainingNeeded = plan.goal - (plan.totalSaved || 0);
+    if (remainingNeeded <= 0) return "Goal Met!";
+    
+    const daysNeeded = Math.ceil(remainingNeeded / plan.dailySavingsGoal);
+    
+    let cur = getManilaDate();
+    cur.setHours(0, 0, 0, 0);
+    // Start counting from tomorrow
+    cur.setDate(cur.getDate() + 1);
+    
+    let workingDaysFound = 0;
+    const mergedEx = mergeExclusions(plan.exclusions || []);
+
+    // Safety counter to prevent infinite loops
+    let safety = 0;
+    while (workingDaysFound < daysNeeded && safety < 10000) {
+        safety++;
+        const dayNum = cur.getDay();
+        const isWeekend = (dayNum === 0 || dayNum === 6);
+        const dStr = cur.toLocaleDateString('en-CA');
+        const isExcluded = mergedEx.some(ex => dStr >= ex.start && dStr <= ex.end);
+        
+        if (!isWeekend && !isExcluded) {
+            workingDaysFound++;
+        }
+        
+        if (workingDaysFound < daysNeeded) {
+            cur.setDate(cur.getDate() + 1);
+        }
+    }
+    
+    return cur.toLocaleDateString('en-CA');
 }
 
 function saveState() {
@@ -92,6 +202,14 @@ function checkDailyReset() {
                 state.totalSavings += actualSavings;
                 plan.totalSaved = (plan.totalSaved || 0) + actualSavings;
                 plan.totalSpent = (plan.totalSpent || 0) + (plan.dailySpent || 0);
+
+                // Plan-specific history tracking
+                plan.history = plan.history || [];
+                plan.history.push({
+                    date: state.lastLoginDate || todayStr,
+                    totalSaved: plan.totalSaved
+                });
+                if (plan.history.length > 30) plan.history.shift();
                 
                 // Reset daily
                 plan.dayActive = false;
@@ -132,14 +250,17 @@ function openPlanHub(planId) {
     document.getElementById('detail-plan-name').innerText = plan.name;
     
     // Set settings UI values
-    document.getElementById('toggle-estimate').checked = plan.estimateMode;
-    document.getElementById('toggle-manual').checked = plan.manualSavingsMode;
-    document.getElementById('toggle-penalty').checked = plan.penaltyMode;
+    document.getElementById('toggle-estimate').checked = !!plan.estimateMode;
+    document.getElementById('toggle-manual').checked = !!plan.manualSavingsMode;
+    document.getElementById('toggle-penalty').checked = !!plan.penaltyMode;
+    document.getElementById('toggle-use-end-date').checked = plan.useEndDate !== false;
     document.getElementById('edit-plan-name').value = plan.name;
     document.getElementById('edit-start-date').value = plan.startDate;
-    document.getElementById('edit-end-date').value = plan.endDate;
+    document.getElementById('edit-end-date').value = plan.endDate || '';
+    document.getElementById('edit-end-date-group').classList.toggle('hidden', plan.useEndDate === false);
     document.getElementById('edit-goal').value = plan.goal || '';
 
+    renderExclusions();
     updatePlanHubUI();
     showScreen('plan-detail-screen');
     // Default to 'This' tab
@@ -157,11 +278,19 @@ function switchTab(tabId) {
 function renderPlans() {
     const list = document.getElementById('plans-list');
     if (state.plans.length === 0) {
-        list.innerHTML = `<div class="card" style="text-align:center; color:var(--text-light)">No plans yet. Create one!</div>`;
+        list.innerHTML = `
+            <div class="card" style="text-align:center; border-style: dashed; padding: 40px 20px;">
+                <i data-lucide="sparkles" size="32" style="color:var(--secondary-dark); margin-bottom:10px"></i>
+                <p style="color:var(--text-light); font-weight:600">No savings plans yet!<br>Tap the plus button to start your journey.</p>
+            </div>
+        `;
+        lucide.createIcons();
         return;
     }
 
-    const today = new Date();
+    const today = getManilaDate();
+    today.setHours(0,0,0,0);
+
     list.innerHTML = state.plans.map(p => {
         const startDate = new Date(p.startDate);
         const isPending = today < startDate;
@@ -169,14 +298,16 @@ function renderPlans() {
         
         return `
             <div class="plan-card ${isPending ? 'pending' : ''}" onclick="window.openPlanHub('${p.id}')">
-                <div>
+                <div style="flex:1">
                     <h3>${p.name}</h3>
-                    <p>${isPending ? 'Starts ' + p.startDate : 'Active until ' + p.endDate}</p>
-                    <small>Saved: ₱${(p.totalSaved || 0).toFixed(2)}</small>
+                    <p>${isPending ? 'Starts ' + p.startDate : 'Target: ' + p.endDate}</p>
+                    <div style="margin-top:8px; font-weight:800; color:var(--primary-dark)">₱${(p.totalSaved || 0).toLocaleString()} <span style="font-weight:400; font-size:11px; color:var(--text-light)">SAVED</span></div>
                 </div>
                 <div style="text-align:right">
-                    <i data-lucide="chevron-right"></i>
-                    ${p.goal ? `<div style="font-size:10px; margin-top:4px">${progress.toFixed(0)}%</div>` : ''}
+                    <div style="background:var(--secondary); width:40px; height:40px; border-radius:50%; display:flex; align-items:center; justify-content:center; margin-left:auto; margin-bottom:5px; box-shadow:0 4px 8px rgba(251, 192, 45, 0.3)">
+                        <i data-lucide="chevron-right" style="color:var(--text)"></i>
+                    </div>
+                    ${p.goal ? `<div style="font-size:12px; font-weight:800; color:var(--primary)">${progress.toFixed(0)}%</div>` : ''}
                 </div>
             </div>
         `;
@@ -206,6 +337,10 @@ function updatePlanHubUI() {
             document.getElementById('allowance-setup-ui').classList.add('hidden');
             document.getElementById('day-active-ui').classList.remove('hidden');
             
+            // Show/hide manual savings edit button
+            const manualEditBtn = document.getElementById('edit-manual-savings-btn');
+            manualEditBtn.classList.toggle('hidden', !plan.manualSavingsMode);
+
             const remaining = plan.dailyAllowance - plan.dailySpent;
             const target = plan.dailySavingsGoal || 0;
             
@@ -223,6 +358,33 @@ function updatePlanHubUI() {
     }
 
     renderProducts();
+}
+
+function renderExclusions() {
+    const plan = state.plans.find(p => p.id === currentPlanId);
+    const container = document.getElementById('exclusions-list');
+    
+    if (!plan.exclusions || plan.exclusions.length === 0) {
+        container.innerHTML = `<p style="text-align:center; color:var(--text-light); font-size: 11px; margin: 10px 0;">No exclusions set.</p>`;
+        return;
+    }
+
+    // Merge for display so the user sees the logic applied
+    const merged = mergeExclusions(plan.exclusions);
+    // Update the actual state to keep it clean (sync with merged)
+    plan.exclusions = merged;
+
+    container.innerHTML = plan.exclusions.map((ex, idx) => `
+        <div class="exclusion-item">
+            <div class="excl-dates">
+                <span>${ex.start}</span>
+                <i data-lucide="arrow-right" size="12"></i>
+                <span>${ex.end}</span>
+            </div>
+            <button class="btn-del-excl" onclick="window.deleteExclusion(${idx})"><i data-lucide="trash-2" size="14"></i></button>
+        </div>
+    `).join('');
+    lucide.createIcons();
 }
 
 function renderProducts() {
@@ -251,15 +413,21 @@ function renderPlanReports() {
     
     document.getElementById('plan-progress-bar').style.width = `${progress}%`;
     
-    // Calculate real calendar days left for visual report
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const end = new Date(plan.endDate);
-    end.setHours(0,0,0,0);
-    const diffTime = end - today;
-    const realDaysLeft = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-    
-    document.getElementById('stat-days-left').innerText = realDaysLeft;
+    // UI state for Indefinite vs Fixed mode
+    const isIndefinite = plan.useEndDate === false;
+    document.getElementById('stat-days-left-group').classList.toggle('hidden', isIndefinite);
+    document.getElementById('stat-projected-group').classList.toggle('hidden', !isIndefinite);
+
+    if (!isIndefinite) {
+        // Calculate actual working days left (M-F minus exclusions)
+        const today = getManilaDate();
+        const workingDaysLeft = countCalculationDays(today, plan.endDate, plan.exclusions || []);
+        document.getElementById('stat-days-left').innerText = workingDaysLeft;
+    } else {
+        const projected = calculateProjectedEndDate(plan);
+        document.getElementById('stat-projected-date').innerText = projected || 'TBD';
+    }
+
     document.getElementById('stat-debt').innerText = `₱${(plan.penaltyDebt || 0).toFixed(2)}`;
     
     // Check if there's a custom display for saved amount
@@ -284,7 +452,39 @@ function renderPlanReports() {
                 backgroundColor: ['#2ecc71', '#eee']
             }]
         },
-        options: { cutout: '70%', plugins: { legend: { display: false } } }
+        options: { cutout: '70%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, maintainAspectRatio: false }
+    });
+
+    const ctxHistory = document.getElementById('plan-history-chart');
+    if (planHistoryChart) planHistoryChart.destroy();
+
+    const hist = plan.history || [];
+    const labels = hist.map(h => h.date.split(' ').slice(1,3).join(' '));
+    const data = hist.map(h => h.totalSaved);
+
+    if (labels.length === 0) { 
+        labels.push('Now'); 
+        data.push(plan.totalSaved || 0); 
+    }
+
+    planHistoryChart = new Chart(ctxHistory, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                data,
+                borderColor: '#00bcd4',
+                tension: 0.4,
+                pointRadius: 0,
+                fill: false,
+                borderWidth: 2
+            }]
+        },
+        options: {
+            plugins: { legend: { display: false } },
+            scales: { x: { display: false }, y: { display: false } },
+            maintainAspectRatio: false
+        }
     });
 }
 
@@ -352,23 +552,29 @@ function setupEvents() {
     document.getElementById('add-plan-btn').onclick = () => {
         document.getElementById('plan-modal').classList.remove('hidden');
     };
+    document.getElementById('new-plan-use-end').onchange = (e) => {
+        document.getElementById('new-plan-end-group').classList.toggle('hidden', !e.target.checked);
+    };
     document.getElementById('close-plan-modal').onclick = () => {
         document.getElementById('plan-modal').classList.add('hidden');
     };
     document.getElementById('save-new-plan').onclick = () => {
         const name = document.getElementById('new-plan-name').value;
         const start = document.getElementById('new-plan-start').value;
-        const end = document.getElementById('new-plan-end').value;
+        const useEnd = document.getElementById('new-plan-use-end').checked;
+        const end = useEnd ? document.getElementById('new-plan-end').value : null;
         const goal = parseFloat(document.getElementById('new-plan-goal').value);
 
-        if (!name || !start || !end) return alert('Name and Dates are required');
+        if (!name || !start || (useEnd && !end)) return alert('Name and required Dates are missing');
 
         const newPlan = {
             id: Date.now().toString(),
-            name, startDate: start, endDate: end, goal: goal || 0,
+            name, startDate: start, endDate: end, 
+            useEndDate: useEnd,
+            goal: goal || 0,
             products: [], totalSaved: 0, totalSpent: 0, penaltyDebt: 0,
             estimateMode: true, manualSavingsMode: false, penaltyMode: true,
-            dayActive: false
+            dayActive: false, history: []
         };
         state.plans.push(newPlan);
         saveState();
@@ -381,8 +587,11 @@ function setupEvents() {
         const plan = state.plans.find(p => p.id === currentPlanId);
         plan.name = document.getElementById('edit-plan-name').value;
         plan.startDate = document.getElementById('edit-start-date').value;
-        plan.endDate = document.getElementById('edit-end-date').value;
+        plan.useEndDate = document.getElementById('toggle-use-end-date').checked;
+        plan.endDate = plan.useEndDate ? document.getElementById('edit-end-date').value : null;
         plan.goal = parseFloat(document.getElementById('edit-goal').value) || 0;
+        
+        refreshPlanTarget(plan);
         saveState();
         updatePlanHubUI();
         alert('Plan updated');
@@ -390,12 +599,16 @@ function setupEvents() {
 
     // Toggles
     document.getElementById('toggle-estimate').onchange = (e) => {
+        if (e.target.checked) {
+            if (navigator.vibrate) navigator.vibrate(10);
+        }
         const plan = state.plans.find(p => p.id === currentPlanId);
         plan.estimateMode = e.target.checked;
         if (plan.estimateMode) {
             plan.manualSavingsMode = false;
             document.getElementById('toggle-manual').checked = false;
         }
+        refreshPlanTarget(plan);
         saveState();
         updatePlanHubUI();
     };
@@ -405,7 +618,11 @@ function setupEvents() {
         if (plan.manualSavingsMode) {
             plan.estimateMode = false;
             document.getElementById('toggle-estimate').checked = false;
+        } else {
+            plan.estimateMode = true;
+            document.getElementById('toggle-estimate').checked = true;
         }
+        refreshPlanTarget(plan);
         saveState();
         updatePlanHubUI();
     };
@@ -413,6 +630,15 @@ function setupEvents() {
         const plan = state.plans.find(p => p.id === currentPlanId);
         plan.penaltyMode = e.target.checked;
         saveState();
+    };
+
+    document.getElementById('toggle-use-end-date').onchange = (e) => {
+        const plan = state.plans.find(p => p.id === currentPlanId);
+        plan.useEndDate = e.target.checked;
+        document.getElementById('edit-end-date-group').classList.toggle('hidden', !plan.useEndDate);
+        refreshPlanTarget(plan);
+        saveState();
+        updatePlanHubUI();
     };
 
     // Daily Actions
@@ -435,6 +661,33 @@ function setupEvents() {
         plan.dailyAllowance = allowance;
         plan.dailySavingsGoal = target;
         plan.dailySpent = 0;
+        saveState();
+        updatePlanHubUI();
+    };
+
+    document.getElementById('edit-allowance-btn').onclick = () => {
+        const plan = state.plans.find(p => p.id === currentPlanId);
+        if (!confirm('Are you sure you want to edit today\'s allowance? Existing spending will be retained.')) return;
+
+        const newVal = prompt("Enter your new total allowance for today:", plan.dailyAllowance);
+        if (newVal === null || newVal === "" || isNaN(parseFloat(newVal))) return;
+
+        plan.dailyAllowance = parseFloat(newVal);
+        refreshPlanTarget(plan);
+        
+        saveState();
+        updatePlanHubUI();
+    };
+
+    document.getElementById('edit-manual-savings-btn').onclick = () => {
+        const plan = state.plans.find(p => p.id === currentPlanId);
+        if (!confirm('Are you sure you want to change today\'s manual savings target?')) return;
+
+        const newVal = prompt("Enter your new manual savings target for today:", plan.dailySavingsGoal);
+        if (newVal === null || newVal === "" || isNaN(parseFloat(newVal))) return;
+
+        plan.dailySavingsGoal = parseFloat(newVal);
+        
         saveState();
         updatePlanHubUI();
     };
@@ -467,6 +720,28 @@ function setupEvents() {
         saveState();
         renderProducts();
         document.getElementById('product-modal').classList.add('hidden');
+    };
+
+    // Exclusion Modal
+    document.getElementById('add-exclusion-btn').onclick = () => document.getElementById('exclusion-modal').classList.remove('hidden');
+    document.getElementById('close-excl-modal').onclick = () => document.getElementById('exclusion-modal').classList.add('hidden');
+    document.getElementById('save-excl-btn').onclick = () => {
+        const start = document.getElementById('excl-start').value;
+        const end = document.getElementById('excl-end').value;
+        if (!start || !end) return alert('Select both dates');
+        
+        const plan = state.plans.find(p => p.id === currentPlanId);
+        plan.exclusions = plan.exclusions || [];
+        plan.exclusions.push({ start, end });
+        
+        refreshPlanTarget(plan);
+        saveState();
+        renderExclusions();
+        updatePlanHubUI();
+        if (document.querySelector('.tab-pane#reports-tab').classList.contains('active')) {
+            renderPlanReports();
+        }
+        document.getElementById('exclusion-modal').classList.add('hidden');
     };
 
     // Delete Plan
@@ -503,6 +778,18 @@ window.buyProduct = (idx) => {
     plan.dailySpent += prod.price;
     saveState();
     updatePlanHubUI();
+};
+
+window.deleteExclusion = (idx) => {
+    const plan = state.plans.find(p => p.id === currentPlanId);
+    plan.exclusions.splice(idx, 1);
+    refreshPlanTarget(plan);
+    saveState();
+    renderExclusions();
+    updatePlanHubUI();
+    if (document.querySelector('.tab-pane#reports-tab').classList.contains('active')) {
+        renderPlanReports();
+    }
 };
 
 // --- Start ---
