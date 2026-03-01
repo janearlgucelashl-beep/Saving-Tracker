@@ -1,18 +1,18 @@
 @font-face {
   font-family: "Outfit";
-  src: url("fonts/Outfit-Regular.ttf") format("truetype");
+  src: url("Outfit-Regular.ttf") format("truetype");
   font-weight: 400;
 }
 
 @font-face {
   font-family: "Outfit";
-  src: url("fonts/Outfit-SemiBold.ttf") format("truetype");
+  src: url("Outfit-SemiBold.ttf") format("truetype");
   font-weight: 600;
 }
 
 @font-face {
   font-family: "Outfit";
-  src: url("fonts/Outfit-ExtraBold.ttf") format("truetype");
+  src: url("Outfit-ExtraBold.ttf") format("truetype");
   font-weight: 800;
 }
 :root {
